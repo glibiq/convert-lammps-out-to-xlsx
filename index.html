@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Space-Delimited to XLSX Converter</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: auto;
+            text-align: center;
+        }
+        .file-input {
+            margin: 20px;
+        }
+        .header-list {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 5px;
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 10px;
+        }
+        .controls {
+            margin-top: 10px;
+        }
+        .btn {
+            margin: 5px;
+            padding: 8px 15px;
+            cursor: pointer;
+            border: none;
+            color: white;
+        }
+        .btn-select { background: green; }
+        .btn-unselect { background: red; }
+        .btn-download { background: blue; }
+    </style>
+</head>
+<body>
+
+    <h2>Space-Delimited to XLSX Converter</h2>
+
+    <input type="file" id="fileInput" class="file-input" accept=".out">
+    <div id="headerSelection" class="header-list"></div>
+    
+    <div class="controls">
+        <button class="btn btn-select" onclick="selectAll()">Select All</button>
+        <button class="btn btn-unselect" onclick="unselectAll()">Unselect All</button>
+        <button class="btn btn-download" onclick="downloadXLSX()" disabled id="downloadBtn">Download XLSX</button>
+    </div>
+
+    <script>
+        let allHeaders = [];
+        let selectedHeaders = {};
+
+        document.getElementById('fileInput').addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const lines = e.target.result.split("\n");
+                const headersSet = new Set();
+
+                lines.forEach(line => {
+                    if (line.startsWith("#")) {
+                        line.substring(1).trim().split(/\s+/).forEach(h => headersSet.add(h));
+                    }
+                });
+
+                allHeaders = [...headersSet].filter(h => h !== "Timestep"); // Exclude Timestep from selection
+                renderHeaderSelection();
+            };
+
+            reader.readAsText(file);
+        });
+
+        function renderHeaderSelection() {
+            const container = document.getElementById("headerSelection");
+            container.innerHTML = ""; // Clear previous selections
+
+            allHeaders.forEach(header => {
+                const checkbox = document.createElement("input");
+                checkbox.type = "checkbox";
+                checkbox.id = header;
+                checkbox.checked = true;
+                checkbox.addEventListener("change", toggleDownloadButton);
+
+                selectedHeaders[header] = checkbox;
+
+                const label = document.createElement("label");
+                label.innerHTML = header;
+                label.setAttribute("for", header);
+
+                const div = document.createElement("div");
+                div.appendChild(checkbox);
+                div.appendChild(label);
+                container.appendChild(div);
+            });
+
+            toggleDownloadButton();
+        }
+
+        function toggleDownloadButton() {
+            const anyChecked = Object.values(selectedHeaders).some(cb => cb.checked);
+            document.getElementById("downloadBtn").disabled = !anyChecked;
+        }
+
+        function selectAll() {
+            Object.values(selectedHeaders).forEach(cb => cb.checked = true);
+            toggleDownloadButton();
+        }
+
+        function unselectAll() {
+            Object.values(selectedHeaders).forEach(cb => cb.checked = false);
+            toggleDownloadButton();
+        }
+
+        function downloadXLSX() {
+            const fileInput = document.getElementById('fileInput');
+            if (!fileInput.files.length) return alert("Please upload a file first.");
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const lines = e.target.result.split("\n");
+                let headers = ["Timestep", ...allHeaders.filter(h => selectedHeaders[h].checked)];
+                let data = [];
+
+                lines.forEach(line => {
+                    if (!line.startsWith("#") && line.trim() !== "") {
+                        let values = line.trim().split(/\s+/);
+                        let rowData = {};
+                        headers.forEach((header, index) => {
+                            rowData[header] = values[index] || "0"; // Fill missing values with "0"
+                        });
+                        data.push(rowData);
+                    }
+                });
+
+                generateExcel(headers, data);
+            };
+
+            reader.readAsText(fileInput.files[0]);
+        }
+
+        function generateExcel(headers, data) {
+            const ws = XLSX.utils.json_to_sheet(data, { header: headers });
+
+            // Freeze the first row (headers)
+            ws["!ref"] = `A1:${String.fromCharCode(65 + headers.length - 1)}${data.length + 1}`;
+            ws["!autofilter"] = { ref: `A1:${String.fromCharCode(65 + headers.length - 1)}1` }; // Enable filtering
+
+            // Auto-adjust column widths
+            ws["!cols"] = headers.map(header => ({ wch: header.length + 5 }));
+
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Data");
+
+            XLSX.writeFile(wb, "Converted_File.xlsx");
+        }
+    </script>
+
+</body>
+</html>
+
